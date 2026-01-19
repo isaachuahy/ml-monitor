@@ -2,16 +2,26 @@ import os
 import time
 import uuid
 import json
+import logging
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 import psycopg2
 from api.schemas import PredictionRequest, PredictionResponse
 
+# Logging setup
+# Configure logging to show timestamp, name, level, and message
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("api")
 app = FastAPI(title="ML Monitoring Inference Service")
 
 # DB Connection - In production, use a connection pool (like sqlalchemy)
 # For this portfolio, direct psycopg2 is simpler and easier to explain for development
 def save_prediction_to_db(payload: dict):
     try:
+        request_id = payload['request_id']
+        logger.info(f"Attempting to save prediction to database for request {request_id}")
         conn = psycopg2.connect(os.getenv("DATABASE_URL"))
         cur = conn.cursor()
         cur.execute(
@@ -19,7 +29,7 @@ def save_prediction_to_db(payload: dict):
                (request_id, model_version, input_data, prediction_prob, prediction_class, latency_ms) 
                VALUES (%s, %s, %s, %s, %s, %s)""",
             (
-                payload['request_id'], 
+                request_id, 
                 payload['model_version'], 
                 json.dumps(payload['input_data']), 
                 payload['prediction_prob'], 
@@ -30,17 +40,20 @@ def save_prediction_to_db(payload: dict):
         conn.commit()
         cur.close()
         conn.close()
+        logger.info(f"SUCCESS: Prediction saved to database for request {request_id}")
     except Exception as e:
-        print(f"Database logging failed: {e}")
+        logger.error(f"FAILURE: Write request {request_id} failed: {e}", exc_info=True)
+
 
 @app.get("/health")
 def health_check():
+    logger.info("Health check endpoint called")
     return {"status": "healthy"}
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(request: PredictionRequest, background_tasks: BackgroundTasks):
+    logger.info(f"Received prediction request: {request.model_dump()}")
     start_time = time.time()
-    
     # --- MOCK MODEL LOGIC ---
     # we'll replace this with a real DVC-tracked model.
     # Logic: Higher credit score + higher income = lower probability of default.
