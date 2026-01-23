@@ -24,5 +24,18 @@ services:
     depends_on:
       - db
 
+  eval_worker:
+    build:
+      context: .
+      dockerfile: eval/Dockerfile.eval
+    container_name: ml_eval_worker
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      - db
+    # We mount volumes so you can tweak the script without rebuilding
+    volumes:
+      - ./eval:/app/eval
+
 volumes:
   postgres_data:
