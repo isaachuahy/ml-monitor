@@ -33,9 +33,11 @@ services:
       - DATABASE_URL=${DATABASE_URL}
     depends_on:
       - db
-    # We mount volumes so you can tweak the script without rebuilding
+    # Mount volumes so we can tweak the script without rebuilding
     volumes:
       - ./eval:/app/eval
+    # Run the scheduler module
+    command: python -m eval.scheduler
 
 volumes:
   postgres_data:
