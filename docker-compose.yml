@@ -39,5 +39,16 @@ services:
     # Run the scheduler module
     command: python -m eval.scheduler
 
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile.dashboard
+    container_name: ml_dashboard
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
 volumes:
   postgres_data:
