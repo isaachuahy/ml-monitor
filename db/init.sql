@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     latency_ms FLOAT NOT NULL
 );
 
--- Create the ground truth table
+-- Create the ground truth table. I kept the request_id as a foreign key to the predictions table to ensure data integrity.
 CREATE TABLE IF NOT EXISTS ground_truth (
     request_id UUID PRIMARY KEY REFERENCES predictions(request_id),
     actual_class INTEGER NOT NULL,

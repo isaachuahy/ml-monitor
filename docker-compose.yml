@@ -31,6 +31,7 @@ services:
     container_name: ml_eval_worker
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
     depends_on:
       - db
     # Mount volumes so we can tweak the script without rebuilding

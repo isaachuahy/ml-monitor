@@ -3,6 +3,7 @@ from sklearn.metrics import accuracy_score, f1_score
 from psycopg2.extras import execute_values
 import logging
 from eval.db_utils import get_db_conn  # Importing our shared tool
+from eval.alerting import send_discord_alert
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("metrics_compute")
@@ -21,7 +22,9 @@ def compute_and_save_metrics():
         JOIN ground_truth g ON p.request_id = g.request_id
         WHERE p.timestamp > NOW() - INTERVAL '7 days' 
     """
-    
+    THRESHOLD_ACCURACY = 0.8
+    THRESHOLD_F1 = 0.8
+
     logger.info("Fetching data for evaluation from the last 7 days...")
     df = pd.read_sql(query, conn)
     
@@ -45,6 +48,27 @@ def compute_and_save_metrics():
     window_start = window_end - pd.Timedelta(days=7)
     model_version = "v1.0.0" 
     
+    # 4. Alerting
+    # Check if the accuracy is below the threshold
+    if acc < THRESHOLD_ACCURACY or f1 < THRESHOLD_F1:
+        if acc < THRESHOLD_ACCURACY:
+            logger.warning(f"Accuracy is below {THRESHOLD_ACCURACY} threshold: {acc:.4f}")
+        if f1 < THRESHOLD_F1:
+            logger.warning(f"F1 score is below {THRESHOLD_F1} threshold: {f1:.4f}")
+
+        alert_message = (
+            f"Model Performance Degradation Alert!!!\n"
+            f"Current Accuracy: {acc:.4f}\n"
+            f"Current F1 Score: {f1:.4f}\n"
+            f"Accuracy Threshold: {THRESHOLD_ACCURACY}\n"
+            f"F1 Score Threshold: {THRESHOLD_F1}\n"
+            f"Model Version: {model_version}\n"
+            f"Window Start: {window_start}\n"
+            f"Window End: {window_end}\n"
+        )
+        send_discord_alert(alert_message)
+
+
     metrics_to_insert = [
         ('accuracy', float(acc), model_version, window_start, window_end),
         ('f1_score', float(f1), model_version, window_start, window_end)
