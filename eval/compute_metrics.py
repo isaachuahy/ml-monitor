@@ -57,7 +57,7 @@ def compute_and_save_metrics():
             logger.warning(f"F1 score is below {THRESHOLD_F1} threshold: {f1:.4f}")
 
         alert_message = (
-            f"Model Performance Degradation Alert!!!\n"
+            f"🚨 **Model Performance Degradation Alert** 🚨\n"
             f"Current Accuracy: {acc:.4f}\n"
             f"Current F1 Score: {f1:.4f}\n"
             f"Accuracy Threshold: {THRESHOLD_ACCURACY}\n"
@@ -65,6 +65,7 @@ def compute_and_save_metrics():
             f"Model Version: {model_version}\n"
             f"Window Start: {window_start}\n"
             f"Window End: {window_end}\n"
+            f"**Action:** Check for data leakage."
         )
         send_discord_alert(alert_message)
 

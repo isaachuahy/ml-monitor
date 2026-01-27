@@ -3,6 +3,7 @@ import logging
 from apscheduler.schedulers.blocking import BlockingScheduler
 from eval.simulate_ground_truth import simulate_ground_truth
 from eval.compute_metrics import compute_and_save_metrics
+from eval.drift import detect_drift
 
 # We use APScheduler for observability and reliability
 
@@ -30,6 +31,13 @@ def job_metrics():
     except Exception as e:
         logger.error(f"Metric Computation Failed: {e}", exc_info=True)
 
+def job_drift():
+    logger.info("Triggering Drift Detection Job...")
+    try:
+        detect_drift()
+    except Exception as e:
+        logger.error(f"Drift Detection Failed: {e}", exc_info=True)
+
 if __name__ == "__main__":
     # Create the scheduler
     # Runs in main thread and blocks the main thread from exiting
@@ -45,6 +53,9 @@ if __name__ == "__main__":
     
     # 2. Re-calculate metrics every 30 seconds (TODO: stagger slightly if needed)
     scheduler.add_job(job_metrics, 'interval', seconds=30)
+    
+    # 3. Detect drift every 60 seconds (less frequent than metrics)
+    scheduler.add_job(job_drift, 'interval', seconds=60)
     
     logger.info("Scheduler started! Jobs will run every 30 seconds.")
     
