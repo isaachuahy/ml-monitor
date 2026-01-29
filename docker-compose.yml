@@ -23,6 +23,8 @@ services:
       - DATABASE_URL=${DATABASE_URL}
     depends_on:
       - db
+    volumes:
+      - ./models:/app/models
 
   eval_worker:
     build:
@@ -37,6 +39,7 @@ services:
     # Mount volumes so we can tweak the script without rebuilding
     volumes:
       - ./eval:/app/eval
+      - ./models:/app/models
     # Run the scheduler module
     command: python -m eval.scheduler
 

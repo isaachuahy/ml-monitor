@@ -6,3 +6,6 @@ python-dotenv>=1.0.1
 apscheduler==3.10.4
 requests==2.32.3
 scipy==1.13.1
+scikit-learn>=1.0.0
+pandas>=1.5.0
+numpy>=1.24.0
