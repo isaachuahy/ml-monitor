@@ -4,6 +4,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from eval.simulate_ground_truth import simulate_ground_truth
 from eval.compute_metrics import compute_and_save_metrics
 from eval.drift import detect_drift
+from eval.retrain import retrain_model
 
 # We use APScheduler for observability and reliability
 
@@ -34,7 +35,13 @@ def job_metrics():
 def job_drift():
     logger.info("Triggering Drift Detection Job...")
     try:
-        detect_drift()
+        drift_detected, p_value = detect_drift()
+        if drift_detected:
+            logger.info(f"Significant data drift detected: p-value < 0.05: {p_value}. Triggering Retraining Job...")
+            try:
+                retrain_model()
+            except Exception as e:
+                logger.error(f"Retraining Job Failed: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"Drift Detection Failed: {e}", exc_info=True)
 

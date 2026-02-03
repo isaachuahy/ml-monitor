@@ -13,5 +13,5 @@ RUN pip install pandas scikit-learn
 
 COPY . .
 
-# Default command (can be overridden)
+# Default command, will be overriden by Compose
 CMD ["python", "-m", "eval.simulate_ground_truth"]

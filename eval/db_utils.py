@@ -9,26 +9,34 @@ import psycopg2
 def get_db_conn():
     return psycopg2.connect(os.getenv("DATABASE_URL"))
 
-def get_latest_version():
+def get_latest_version(active_only=False) -> str:
     """
     Query database for the latest version string.
-    Returns None if no versions exist.
+    Raises ValueError if no versions exist.
     """
     conn = get_db_conn()
     cur = conn.cursor()
     
     # Get the latest version (by created_at, not just highest version string)
-    cur.execute("""
-        SELECT version FROM model_versions 
-        ORDER BY created_at DESC 
-        LIMIT 1
-    """)
+    if active_only:
+        cur.execute("""
+            SELECT version FROM model_versions 
+            WHERE is_active = TRUE
+            ORDER BY created_at DESC 
+            LIMIT 1
+        """)
+    else:
+        cur.execute("""
+            SELECT version FROM model_versions 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        """)
     row = cur.fetchone()
     cur.close()
     conn.close()
     
     if not row:
-        return None
+        raise ValueError("No versions found in the database") # If this is your first run, you need to manually insert a version first
     
     # fetchone() returns a tuple like ('v1.0.0',) - we need the first element
     # row[0] extracts the version string from the tuple
@@ -60,11 +68,11 @@ def increment_version(version, increment_type='patch'):
     else:
         raise ValueError(f"Invalid increment_type: {increment_type}")
 
-def get_next_version():
+def get_next_version(increment_type='patch'):
     """
     Get the next semantic version by incrementing the patch version.
     Queries the database for the latest version and increments it.
-    Returns v1.0.0 if no versions exist.
+    Raises ValueError if no versions exist.
     
     Semantic versioning:
     - MAJOR (v1.0.0 -> v2.0.0): Breaking changes, major architecture changes
@@ -73,19 +81,26 @@ def get_next_version():
     
     For automated retraining, we increment PATCH. Major/minor changes should be
     done manually via SQL or by calling increment_version() with 'major'/'minor'.
+
+    Args:
+        increment_type: 'major', 'minor', or 'patch'
+    
+    Returns:
+        New, incremented version string (e.g., "v1.0.1" for patch increment)
+        Raises ValueError if no versions exist or if the version parsing fails, or if the increment type is invalid
     """
     latest_version = get_latest_version()
     
     if latest_version is None:
-        # First model version - no rows exist yet
-        return "v1.0.0"
+        # First model version - no rows exist yet, need to manually insert a preliminary model that is versioned
+        raise ValueError("No versions found in the database")
     
     try:
-        # Increment patch version for retraining (v1.0.0 -> v1.0.1)
-        return increment_version(latest_version, increment_type='patch')
+        # Increment by default: patch version for retraining (v1.0.0 -> v1.0.1)
+        return increment_version(latest_version, increment_type=increment_type)
     except ValueError as e:
         # Log warning if version parsing fails (import here to avoid circular deps)
         import logging
         logger = logging.getLogger(__name__)
-        logger.warning(f"Error parsing version {latest_version}: {e}, defaulting to v1.0.0")
-        return "v1.0.0"
+        logger.warning(f"Error parsing version {latest_version}: {e}")
+        raise ValueError(f"Error parsing version {latest_version}: {e}")
