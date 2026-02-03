@@ -6,6 +6,8 @@ import pickle
 import os
 import logging
 import json
+import time
+import uuid
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
 from eval.db_utils import get_db_conn, get_next_version
@@ -16,8 +18,13 @@ logger = logging.getLogger("retrainer")
 
 MODELS_DIR="/app/models"
 
-def retrain_model():
-    logger.info("Starting candidate model training job...")
+def retrain_model(run_id=None):
+    """
+    Retrain a candidate model. Optionally pass run_id for correlation with drift detection logs.
+    """
+    t0 = time.time()
+    run_id = run_id or uuid.uuid4().hex[:8]
+    logger.info("run_id=%s Starting candidate model training job...", run_id)
 
     # Fetch recent predictions
     # query = """
@@ -80,8 +87,8 @@ def retrain_model():
     )
 
     send_discord_alert(alert_msg)
-    
-    logger.info("Candidate model training job completed successfully.")
+
+    logger.info("run_id=%s Candidate model training job completed in %.2fs", run_id, time.time() - t0)
 
 if __name__ == "__main__":
     retrain_model()
