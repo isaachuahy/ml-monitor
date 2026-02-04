@@ -7,7 +7,7 @@ import os
 import random
 import logging
 from psycopg2.extras import execute_values
-from eval.db_utils import get_db_conn  # this was originally defined for each script, but importing makes it easier to adjust
+from eval.db_utils import get_db_conn, retry_db_write
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -53,13 +53,16 @@ def simulate_ground_truth():
         new_labels.append((req_id, actual_class))
         # ------------------------
 
-    # 2. Bulk Insert labels
+    # 2. Bulk Insert labels (with retry)
     insert_query = "INSERT INTO ground_truth (request_id, actual_class) VALUES %s"
-    execute_values(cur, insert_query, new_labels)
-    
-    conn.commit()
-    cur.close()
     conn.close()
+
+    def _write_ground_truth(conn, insert_query, rows):
+        cur = conn.cursor()
+        execute_values(cur, insert_query, rows)
+        conn.commit()
+
+    retry_db_write(_write_ground_truth, insert_query, new_labels)
     logger.info(f"Successfully added {len(new_labels)} ground truth labels.")
 
 if __name__ == "__main__":

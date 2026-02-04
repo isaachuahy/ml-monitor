@@ -10,6 +10,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException
 from contextlib import asynccontextmanager
 import psycopg2
 from api.schemas import PredictionRequest, PredictionResponse
+from eval.db_utils import save_prediction_to_db
 
 # Logging setup
 # Configure logging to show timestamp, name, level, and message
@@ -80,34 +81,7 @@ async def lifespan(app: FastAPI):
 # Context manager is lifespan which 
 app = FastAPI(title="ML Monitoring Inference Service", lifespan=lifespan)
 
-# DB Connection - In production, use a connection pool (like sqlalchemy)
-# For this portfolio, direct psycopg2 is simpler and easier to explain for development
-def save_prediction_to_db(payload: dict):
-    try:
-        request_id = payload['request_id']
-        logger.info(f"Attempting to save prediction to database for request {request_id}")
-        conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-        cur = conn.cursor()
-        cur.execute(
-            """INSERT INTO predictions 
-               (request_id, model_version, input_data, prediction_prob, prediction_class, latency_ms) 
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            (
-                request_id, 
-                payload['model_version'], 
-                json.dumps(payload['input_data']), 
-                payload['prediction_prob'], 
-                payload['prediction_class'], 
-                payload['latency_ms']
-            )
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
-        logger.info(f"SUCCESS: Prediction saved to database for request {request_id}")
-    except Exception as e:
-        logger.error(f"FAILURE: Write request {request_id} failed: {e}", exc_info=True)
-
+# DB writes (predictions) are in eval.db_utils.save_prediction_to_db with retry
 
 @app.get("/health")
 def health_check():

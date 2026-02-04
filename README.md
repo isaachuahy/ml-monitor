@@ -273,8 +273,56 @@ ml-monitor/
 │   ├── init.sql
 │   └── update_v2.sql
 ├── models/             # Model artifacts (gitignored)
+├── tests/              # Unit and integration tests
+│   ├── __init__.py
+│   ├── conftest.py             # Pytest fixtures, path setup
+│   ├── test_db_utils_retry.py  # Retry logic unit tests
+│   ├── test_e2e_db_writes.py   # DB write integration tests
+│   └── run_retry_tests.py      # Standalone retry tests (no pytest)
 └── docker-compose.yml
 ```
+
+### Testing
+
+Unit and integration tests cover DB write retry behavior and end-to-end writes.
+
+**Unit tests (no database):** retry logic, backoff, exhausted retries, non-retryable exceptions.
+
+```bash
+# With pytest (from repo root, after pip install -r requirements.txt)
+pytest tests/test_db_utils_retry.py -v
+
+# Or standalone (no pytest)
+python tests/run_retry_tests.py
+```
+
+**Integration tests (require running Postgres and DATABASE_URL):** real DB writes and retry path.
+
+```bash
+# Start DB, then run (set DATABASE_URL to match .env)
+docker-compose up -d db
+export DATABASE_URL=postgresql://ml_user:YOUR_PASSWORD@localhost:5433/ml_monitor
+# Apply schema if needed: docker-compose exec db psql -U ml_user -d ml_monitor -f /docker-entrypoint-initdb.d/init.sql
+# and update_v2 for model_versions
+pytest tests/ -v
+
+# Skip integration tests when DB is not available
+pytest tests/ -v -m "not integration"
+```
+
+**See retry behavior in the logs:** pytest captures logs by default. E.g. to see the "DB write failed (attempt X/Y), retrying in..." messages when a test deliberately triggers retries:
+
+```bash
+docker-compose run --rm eval_worker python -m pytest tests/test_db_utils_retry.py -v --log-cli-level=WARNING
+```
+
+Run the test that forces two retries then success:
+
+```bash
+docker-compose run --rm eval_worker python -m pytest tests/test_db_utils_retry.py::TestRetryDbWrite::test_succeeds_after_two_operational_errors -v --log-cli-level=WARNING
+```
+
+You should see two warning lines like: `DB write failed (attempt 1/5), retrying in 0.0s: connection lost`.
 
 ### Running Locally
 

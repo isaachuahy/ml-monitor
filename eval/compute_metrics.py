@@ -2,7 +2,7 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score
 from psycopg2.extras import execute_values
 import logging
-from eval.db_utils import get_db_conn  # Importing our shared tool
+from eval.db_utils import get_db_conn, retry_db_write
 from eval.alerting import send_discord_alert
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -74,12 +74,14 @@ def compute_and_save_metrics():
         ('accuracy', float(acc), model_version, window_start, window_end),
         ('f1_score', float(f1), model_version, window_start, window_end)
     ]
-    
-    cur = conn.cursor()
-    execute_values(cur, insert_query, metrics_to_insert)
-    conn.commit()
-    cur.close()
+
+    def _write_metrics(conn, insert_query, rows):
+        cur = conn.cursor()
+        execute_values(cur, insert_query, rows)
+        conn.commit()
+
     conn.close()
+    retry_db_write(_write_metrics, insert_query, metrics_to_insert)
     logger.info("Metrics saved successfully.")
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ import json
 from scipy.stats import ks_2samp
 from psycopg2.extras import execute_values
 import logging
-from eval.db_utils import get_db_conn, get_latest_version
+from eval.db_utils import get_db_conn, get_latest_version, retry_db_write
 from eval.alerting import send_discord_alert
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -55,20 +55,25 @@ def detect_drift():
     statistic, p_value = ks_2samp(REFERENCE_INCOME, df['income'])
     
     logger.info(f"Drift Check (Income) -> P-Value: {p_value:.5f}")
-    
-    # 4. Save Metric to DB
+
+    # 4. Save Metric to DB (with retry)
+    window_end = pd.Timestamp.now()
+    window_start = window_end - pd.Timedelta(hours=1)
+    current_version = get_latest_version()
     insert_query = """
         INSERT INTO metrics (metric_name, metric_value, model_version, window_start, window_end)
         VALUES %s
     """
-    window_end = pd.Timestamp.now()
-    window_start = window_end - pd.Timedelta(hours=1)
+    rows = [('drift_income_p_value', float(p_value), current_version, window_start, window_end)]
+    
+    # Close connection for DB reads to prepare for writing
+    conn.close()
 
-    current_version = get_latest_version()
-    execute_values(conn.cursor(), insert_query, [
-        ('drift_income_p_value', float(p_value), current_version, window_start, window_end)
-    ])
-    conn.commit()
+    def _write_drift_metric(conn, insert_query, rows):
+        execute_values(conn.cursor(), insert_query, rows)
+        conn.commit()
+
+    retry_db_write(_write_drift_metric, insert_query, rows)
 
     # 5. Alerting
     if p_value < threshold:
@@ -81,8 +86,7 @@ def detect_drift():
             f"**Action:** Check for model degradation."
         )
         send_discord_alert(msg)
-    
-    conn.close()
+
     logger.info("Drift detection completed successfully.")
 
     return (p_value < threshold, p_value)

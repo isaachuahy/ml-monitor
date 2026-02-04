@@ -10,7 +10,7 @@ import time
 import uuid
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
-from eval.db_utils import get_db_conn, get_next_version
+from eval.db_utils import get_db_conn, get_next_version, retry_db_write
 from eval.alerting import send_discord_alert
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -68,15 +68,15 @@ def retrain_model(run_id=None):
 
     logger.info(f"Candidate model saved to {filepath}")
 
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("""
-    INSERT INTO model_versions (version, filepath, is_active, metrics_json)
-    VALUES (%s, %s, FALSE, %s)
-    """, (version_id, filepath, metrics_json))
-    conn.commit()
-    cur.close()
-    conn.close()
+    def _insert_model_version(conn, version_id, filepath, metrics_json):
+        cur = conn.cursor()
+        cur.execute("""
+        INSERT INTO model_versions (version, filepath, is_active, metrics_json)
+        VALUES (%s, %s, FALSE, %s)
+        """, (version_id, filepath, metrics_json))
+        conn.commit()
+
+    retry_db_write(_insert_model_version, version_id, filepath, metrics_json)
 
     alert_msg = (
         f"🎯 **New Candidate Model Version Available** 🎯\n"
