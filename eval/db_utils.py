@@ -19,61 +19,58 @@ def get_db_conn():
     return psycopg2.connect(os.getenv("DATABASE_URL"))
 
 
-def retry_db_write(write_fn, *args, max_retries=3, backoff_seconds=1.0, **kwargs):
+def retry_db_write(max_retries=3, backoff_seconds=1.0):
     """
-    Execute a DB write with retries on transient connection errors.
+    Decorator: retry the wrapped function on transient DB errors.
 
-    write_fn(conn, *args, **kwargs) must perform one or more writes and call conn.commit().
-    The connection is created and closed by this helper; do not close conn inside write_fn.
-
-    Retries on psycopg2.OperationalError and InterfaceError with exponential backoff.
+    The wrapped function should get its own connection (get_db_conn()), do the write,
+    and close the connection. Retries on OperationalError and InterfaceError with exponential backoff.
     """
-    last_exc = None
-    for attempt in range(max_retries):
-        conn = None
-        try:
-            conn = get_db_conn()
-            write_fn(conn, *args, **kwargs)
-            return
-        except RETRYABLE_DB_ERRORS as e:
-            last_exc = e
-            if attempt < max_retries - 1:
-                delay = backoff_seconds * (2 ** attempt)
-                logger.warning(
-                    "DB write failed (attempt %d/%d), retrying in %.1fs: %s",
-                    attempt + 1,
-                    max_retries,
-                    delay,
-                    e,
-                )
-                time.sleep(delay)
-            else:
-                raise
-        finally:
-            if conn is not None:
+
+    def decorator(fn):
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
                 try:
-                    conn.close()
-                except Exception:
-                    pass
+                    return fn(*args, **kwargs)
+                except RETRYABLE_DB_ERRORS as e:
+                    if attempt < max_retries - 1:
+                        delay = backoff_seconds * (2 ** attempt)
+                        logger.warning(
+                            "DB write failed (attempt %d/%d), retrying in %.1fs: %s",
+                            attempt + 1,
+                            max_retries,
+                            delay,
+                            e,
+                        )
+                        time.sleep(delay)
+                    else:
+                        raise
+        return wrapper
+    return decorator
 
 
-def _write_prediction(conn, payload: dict):
-    """Insert a single prediction row. Used by save_prediction_to_db with retry."""
-    cur = conn.cursor()
-    cur.execute(
-        """INSERT INTO predictions 
-           (request_id, model_version, input_data, prediction_prob, prediction_class, latency_ms) 
-           VALUES (%s, %s, %s, %s, %s, %s)""",
-        (
-            payload["request_id"],
-            payload["model_version"],
-            json.dumps(payload["input_data"]) if isinstance(payload.get("input_data"), dict) else payload.get("input_data"),
-            payload["prediction_prob"],
-            payload["prediction_class"],
-            payload["latency_ms"],
-        ),
-    )
-    conn.commit()
+@retry_db_write()
+def _write_prediction(payload: dict):
+    """Insert a single prediction row. Used by save_prediction_to_db."""
+    conn = get_db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO predictions 
+               (request_id, model_version, input_data, prediction_prob, prediction_class, latency_ms) 
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (
+                payload["request_id"],
+                payload["model_version"],
+                json.dumps(payload["input_data"]) if isinstance(payload.get("input_data"), dict) else payload.get("input_data"),
+                payload["prediction_prob"],
+                payload["prediction_class"],
+                payload["latency_ms"],
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def save_prediction_to_db(payload: dict):
@@ -84,7 +81,7 @@ def save_prediction_to_db(payload: dict):
     request_id = payload.get("request_id", "?")
     logger.info("Attempting to save prediction to database for request %s", request_id)
     try:
-        retry_db_write(_write_prediction, payload)
+        _write_prediction(payload)
         logger.info("SUCCESS: Prediction saved to database for request %s", request_id)
     except Exception as e:
         logger.error("FAILURE: Write request %s failed: %s", request_id, e, exc_info=True)

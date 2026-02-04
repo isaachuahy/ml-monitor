@@ -86,25 +86,29 @@ class TestSavePredictionE2E:
     def test_retry_db_write_against_real_db_succeeds(self, db_url, request_id, cleanup_predictions):
         """Retry path: force a transient error on first attempt, then succeed on second."""
         from eval.db_utils import retry_db_write, get_db_conn
-        from unittest.mock import patch
 
         call_count = 0
 
-        def write_fn(conn, rid):
+        def do_write(rid):
             nonlocal call_count
             call_count += 1
-            if call_count == 1:
-                raise psycopg2.OperationalError("simulated connection loss")
-            cur = conn.cursor()
-            cur.execute(
-                """INSERT INTO predictions 
-                   (request_id, model_version, input_data, prediction_prob, prediction_class, latency_ms) 
-                   VALUES (%s, %s, %s, %s, %s, %s)""",
-                (rid, "v1.0.0", "{}", 0.5, 0, 10.0),
-            )
-            conn.commit()
+            conn = get_db_conn()
+            try:
+                if call_count == 1:
+                    raise psycopg2.OperationalError("simulated connection loss")
+                cur = conn.cursor()
+                cur.execute(
+                    """INSERT INTO predictions 
+                       (request_id, model_version, input_data, prediction_prob, prediction_class, latency_ms) 
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (rid, "v1.0.0", "{}", 0.5, 0, 10.0),
+                )
+                conn.commit()
+            finally:
+                conn.close()
 
-        retry_db_write(write_fn, request_id, max_retries=3, backoff_seconds=0.05)
+        wrapped = retry_db_write(max_retries=3, backoff_seconds=0.05)(do_write)
+        wrapped(request_id)
         assert call_count == 2
 
         conn = psycopg2.connect(db_url)
@@ -139,11 +143,16 @@ class TestEvalWritesE2E:
         metric_value = drift_metric_cleanup
         rows = [("drift_income_p_value", metric_value, current_version, window_start, window_end)]
 
-        def _write(conn, query, rows):
-            execute_values(conn.cursor(), query, rows)
-            conn.commit()
+        @retry_db_write()
+        def write_metric(query, rows):
+            conn = get_db_conn()
+            try:
+                execute_values(conn.cursor(), query, rows)
+                conn.commit()
+            finally:
+                conn.close()
 
-        retry_db_write(_write, insert_query, rows)
+        write_metric(insert_query, rows)
 
         conn = psycopg2.connect(db_url)
         cur = conn.cursor()

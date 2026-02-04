@@ -11,6 +11,17 @@ from eval.alerting import send_discord_alert
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("drift_detection")
 
+
+@retry_db_write()
+def write_drift_metric(insert_query, rows):
+    conn = get_db_conn()
+    try:
+        execute_values(conn.cursor(), insert_query, rows)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # --- CONFIGURATION ---
 # We simulate the "Training Data" statistics for INCOME.
 # Assumption: In training, average income was $55k.
@@ -65,15 +76,9 @@ def detect_drift():
         VALUES %s
     """
     rows = [('drift_income_p_value', float(p_value), current_version, window_start, window_end)]
-    
-    # Close connection for DB reads to prepare for writing
     conn.close()
 
-    def _write_drift_metric(conn, insert_query, rows):
-        execute_values(conn.cursor(), insert_query, rows)
-        conn.commit()
-
-    retry_db_write(_write_drift_metric, insert_query, rows)
+    write_drift_metric(insert_query, rows)
 
     # 5. Alerting
     if p_value < threshold:

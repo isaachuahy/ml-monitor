@@ -8,6 +8,17 @@ from eval.alerting import send_discord_alert
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("metrics_compute")
 
+
+@retry_db_write()
+def write_metrics(insert_query, rows):
+    conn = get_db_conn()
+    try:
+        cur = conn.cursor()
+        execute_values(cur, insert_query, rows)
+        conn.commit()
+    finally:
+        conn.close()
+
 # Define the function to compute and save the metrics
 def compute_and_save_metrics():
     # Get a database connection using the utility function.
@@ -75,13 +86,8 @@ def compute_and_save_metrics():
         ('f1_score', float(f1), model_version, window_start, window_end)
     ]
 
-    def _write_metrics(conn, insert_query, rows):
-        cur = conn.cursor()
-        execute_values(cur, insert_query, rows)
-        conn.commit()
-
     conn.close()
-    retry_db_write(_write_metrics, insert_query, metrics_to_insert)
+    write_metrics(insert_query, metrics_to_insert)
     logger.info("Metrics saved successfully.")
 
 if __name__ == "__main__":

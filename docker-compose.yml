@@ -40,6 +40,7 @@ services:
     volumes:
       - ./eval:/app/eval
       - ./models:/app/models
+      - ./tests:/app/tests
     # Run the scheduler module
     command: python -m eval.scheduler
 

@@ -16,7 +16,24 @@ from eval.alerting import send_discord_alert
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("retrainer")
 
-MODELS_DIR="/app/models"
+MODELS_DIR = "/app/models"
+
+
+@retry_db_write()
+def insert_model_version(version_id, filepath, metrics_json):
+    conn = get_db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO model_versions (version, filepath, is_active, metrics_json)
+            VALUES (%s, %s, FALSE, %s)
+            """,
+            (version_id, filepath, metrics_json),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 def retrain_model(run_id=None):
     """
@@ -68,15 +85,7 @@ def retrain_model(run_id=None):
 
     logger.info(f"Candidate model saved to {filepath}")
 
-    def _insert_model_version(conn, version_id, filepath, metrics_json):
-        cur = conn.cursor()
-        cur.execute("""
-        INSERT INTO model_versions (version, filepath, is_active, metrics_json)
-        VALUES (%s, %s, FALSE, %s)
-        """, (version_id, filepath, metrics_json))
-        conn.commit()
-
-    retry_db_write(_insert_model_version, version_id, filepath, metrics_json)
+    insert_model_version(version_id, filepath, metrics_json)
 
     alert_msg = (
         f"🎯 **New Candidate Model Version Available** 🎯\n"

@@ -13,6 +13,18 @@ from eval.db_utils import get_db_conn, retry_db_write
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("ground_truth_sim")
 
+
+@retry_db_write()
+def write_ground_truth(insert_query, rows):
+    conn = get_db_conn()
+    try:
+        cur = conn.cursor()
+        execute_values(cur, insert_query, rows)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def simulate_ground_truth():
     conn = get_db_conn()
     cur = conn.cursor()
@@ -56,13 +68,7 @@ def simulate_ground_truth():
     # 2. Bulk Insert labels (with retry)
     insert_query = "INSERT INTO ground_truth (request_id, actual_class) VALUES %s"
     conn.close()
-
-    def _write_ground_truth(conn, insert_query, rows):
-        cur = conn.cursor()
-        execute_values(cur, insert_query, rows)
-        conn.commit()
-
-    retry_db_write(_write_ground_truth, insert_query, new_labels)
+    write_ground_truth(insert_query, new_labels)
     logger.info(f"Successfully added {len(new_labels)} ground truth labels.")
 
 if __name__ == "__main__":
