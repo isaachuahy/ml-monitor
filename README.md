@@ -13,6 +13,29 @@ A production-ready ML monitoring platform that tracks model performance, detects
 - **Alerting** - Discord webhook integration for model alerts
 - **Database-backed** - PostgreSQL for persistent storage and querying
 
+## Reproduce the public replay
+
+Use Python 3.9 or later and Docker Compose 2.24.4 or later.
+
+1. Run `python3 replay/run.py` from the repository root.
+2. Serve the result with `python3 -m http.server 8876 --bind 127.0.0.1 --directory replay/public`.
+3. Open `http://127.0.0.1:8876` and switch between Baseline and Income shift.
+
+The verifier starts a private Compose project for each scenario. It fits and registers
+the same versioned random forest on 1,000 seeded synthetic records in both projects.
+Baseline draws one synthetic income from each of 100 quantile bands. Income shift
+adds $35,000 to those incomes and keeps debt and credit scores fixed.
+
+The verifier compares the 100 API responses in each scenario with their persisted
+Postgres rows, then runs the existing two-sample Kolmogorov–Smirnov evaluator against
+the training incomes. It reads back one saved drift metric per scenario. Baseline
+must have `p >= 0.05` and Income shift must have `p < 0.05`. These scenarios demonstrate
+the drift check. They do not measure the model's accuracy.
+
+Both checks must pass before the verifier replaces `replay/public/replay.json`.
+Cloudflare Workers Static Assets serves the files in `replay/public`. The public
+dashboard reads the snapshot once and switches scenarios in the browser.
+
 ## Architecture
 
 ```

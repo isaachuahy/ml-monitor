@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Replay a verified data drift check on a credit risk model with synthetic predictions.">
+  <title>ML Monitor · Income drift replay</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./replay.css">
+  <script src="./replay.js" type="module"></script>
+</head>
+<body>
+  <header class="site-header frame">
+    <span class="wordmark">ML Monitor</span>
+    <a href="https://github.com/isaachuahy/ml-monitor#reproduce-the-public-replay">Reproduce this run <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <main class="frame">
+    <h1>When income shifts</h1>
+    <p class="intro">Run through two batches of credit risk predictions and see when the monitor flags a change in income. All data is synthetic.</p>
+
+    <p id="load-status" role="status">Loading the verified replay…</p>
+    <noscript><p>Enable JavaScript to switch scenarios or <a href="./replay.json">read the replay data</a>.</p></noscript>
+    <section id="replay" aria-label="Income drift replay" hidden>
+      <div class="scenario-controls" role="group" aria-label="Scenario">
+        <button type="button" data-scenario="baseline" aria-pressed="true">Baseline</button>
+        <button type="button" data-scenario="income_shift" aria-pressed="false">Income shift</button>
+      </div>
+
+      <div class="replay-layout">
+        <div class="result">
+          <div role="status" aria-atomic="true">
+            <h2 id="decision"></h2>
+            <dl class="p-value">
+              <dt>KS p-value</dt>
+              <dd id="p-value"></dd>
+            </dl>
+          </div>
+          <p id="scenario-note"></p>
+          <p class="threshold">The monitor flags drift when the p-value is below <span id="threshold"></span>.</p>
+        </div>
+
+        <figure class="distribution">
+          <figcaption>
+            <h2>Annual income</h2>
+            <p>Share of records at or below each income</p>
+          </figcaption>
+          <svg id="chart" role="img" aria-labelledby="chart-title chart-description"></svg>
+          <ul class="legend" aria-label="Chart legend">
+            <li><span class="line reference-line" aria-hidden="true"></span> Training reference <span id="reference-count" class="count"></span></li>
+            <li><span class="line batch-line" aria-hidden="true"></span> Prediction batch <span id="batch-count" class="count"></span></li>
+          </ul>
+        </figure>
+      </div>
+
+      <dl class="run-details">
+        <div>
+          <dt>Model version</dt>
+          <dd id="model-version"></dd>
+        </div>
+        <div>
+          <dt>Run completed</dt>
+          <dd><time id="completed-at"></time></dd>
+        </div>
+      </dl>
+    </section>
+  </main>
+</body>
+</html>

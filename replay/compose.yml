@@ -1,0 +1,42 @@
+services:
+  db:
+    container_name: !reset null
+    ports: !reset []
+    volumes:
+      - ./db/update_v2.sql:/docker-entrypoint-initdb.d/model.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "replay", "-d", "replay"]
+      interval: 1s
+      timeout: 2s
+      retries: 60
+
+  api:
+    container_name: !reset null
+    ports: !reset []
+    image: ${REPLAY_IMAGE:-ml-monitor-replay:local}
+    build:
+      dockerfile: replay/Dockerfile
+    volumes: !override
+      - replay_models:/app/models:ro
+    command: ["python", "-m", "replay.scenario", "serve"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=2).close()"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
+  eval_worker:
+    container_name: !reset null
+    image: ${REPLAY_IMAGE:-ml-monitor-replay:local}
+    build: !reset null
+    volumes: !override
+      - replay_models:/app/models
+    entrypoint: ["python", "-m", "replay.scenario"]
+    command: ["--help"]
+
+networks:
+  default:
+    internal: true
+
+volumes:
+  replay_models:

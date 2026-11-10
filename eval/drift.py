@@ -28,15 +28,19 @@ def write_drift_metric(insert_query, rows):
 threshold = 0.05
 REFERENCE_INCOME = np.random.normal(55000, 15000, 1000)
 
-def detect_drift():
+def detect_drift(*, reference_income=None):
     """
     Detects data drift in the (income) feature of the latest predictions.
+
+    Args:
+        reference_income: Optional fixed income sample for a reproducible run.
+            Defaults to the worker's simulated reference sample.
 
     Returns:
         Tuple (is_drift, p_value)
         Returns (False, 0.0) if not enough data to run drift detection or if the JSON parsing fails
         is_drift: True if drift is detected, False otherwise
-        p_value: The p-value of the KS-Test (higher is better, > 0.05 means no drift)
+        p_value: The two-sample KS p-value. Values below the threshold indicate drift.
     """
     conn = get_db_conn()
     
@@ -63,7 +67,8 @@ def detect_drift():
 
     # 3. Run KS Test on INCOME (Input Drift)
     # "Is the Income distribution of the last 100 applicants different from training?"
-    statistic, p_value = ks_2samp(REFERENCE_INCOME, df['income'])
+    reference = REFERENCE_INCOME if reference_income is None else reference_income
+    statistic, p_value = ks_2samp(reference, df['income'])
     
     logger.info(f"Drift Check (Income) -> P-Value: {p_value:.5f}")
 
