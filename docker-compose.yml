@@ -1,59 +1,63 @@
 services:
   db:
-    image: postgres:15-alpine
-    container_name: ml_monitoring_db
+    build:
+      context: .
+      dockerfile: db/Dockerfile.db
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
     volumes:
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   api:
     build:
       context: .
       dockerfile: api/Dockerfile.api
-    container_name: ml_inference_api
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
-      - ./models:/app/models
+      - ./models:/app/models:ro
 
   eval_worker:
     build:
       context: .
       dockerfile: eval/Dockerfile.eval
-    container_name: ml_eval_worker
     environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
     depends_on:
-      - db
-    # Mount volumes so we can tweak the script without rebuilding
+      db:
+        condition: service_healthy
     volumes:
-      - ./eval:/app/eval
       - ./models:/app/models
-      - ./tests:/app/tests
-    # Run the scheduler module
     command: python -m eval.scheduler
 
   dashboard:
     build:
       context: .
       dockerfile: dashboard/Dockerfile.dashboard
-    container_name: ml_dashboard
     ports:
-      - "8501:8501"
-    depends_on:
-      - api
+      - "127.0.0.1:${DASHBOARD_PORT:-8501}:8501"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+
 volumes:
   postgres_data:

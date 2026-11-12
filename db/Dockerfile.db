@@ -1,0 +1,4 @@
+FROM postgres:15-alpine
+
+COPY --chmod=0644 db/init.sql /docker-entrypoint-initdb.d/01-init.sql
+COPY --chmod=0644 db/update_v2.sql /docker-entrypoint-initdb.d/02-model.sql

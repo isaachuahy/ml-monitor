@@ -74,7 +74,7 @@ dashboard reads the snapshot once and switches scenarios in the browser.
 ### Prerequisites
 
 - Docker and Docker Compose
-- Python 3.9+ (for local development)
+- Python 3.12 for the locked application environment
 
 ### Setup
 
@@ -95,17 +95,75 @@ dashboard reads the snapshot once and switches scenarios in the browser.
    docker-compose up -d
    ```
 
-4. **Initialize database schema**
+4. **Check database initialization**
+
+   The database image applies `init.sql` and `update_v2.sql` in order on an empty
+   data volume. Existing volumes retain their data. A failed first initialization
+   can leave a PostgreSQL cluster without any application tables. Recover an
+   existing or partially initialized database by applying both idempotent scripts
+   in order. These commands preserve existing rows and do not delete the volume:
+
    ```bash
-   # The database is automatically initialized with init.sql
-   # For model_versions table, run:
-   docker-compose exec db psql -U ml_user -d ml_monitor < db/update_v2.sql
+   docker compose exec -T db sh -c 'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/init.sql
+   docker compose exec -T db sh -c 'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/update_v2.sql
    ```
+
+   The migration creates the registry without inserting model metadata. Place a
+   trusted compatible model in `models/` and register its actual path before
+   expecting real inference. A response with `model_version: "mock"` means no model
+   is loaded. `/health` reports process liveness, not model readiness.
 
 5. **Access the services**
    - **API**: http://localhost:8000
    - **Dashboard**: http://localhost:8501
    - **API Docs**: http://localhost:8000/docs
+
+## Build and test the four-service foundation
+
+All three Python images install the same exact `requirements.txt` resolution.
+The numerical pins preserve the existing demo model environment. The dashboard
+uses Streamlit 1.56 fragments to refresh every three seconds while **Auto Refresh**
+is enabled. Each render completes; disabling the toggle stops timed refreshes.
+
+In managed Cloud, supply the trusted system CA bundle during builds. The optional
+BuildKit secret is used only for pip and is not copied into an image. TLS
+verification stays enabled. Ordinary builds use the image's normal trust roots.
+
+```bash
+BUILD_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+  docker compose -f docker-compose.yml -f docker-compose.cloud.yml build
+```
+
+Use a unique Compose project for verification and override its model bind mounts
+with a disposable named volume. Keep `DISCORD_WEBHOOK_URL` empty. Set `API_PORT`,
+`DB_PORT`, and `DASHBOARD_PORT` to unused ports, or `0` for allocated ports.
+Published ports bind to loopback. Do not use `down -v` on an existing data project.
+
+The existing `python -m replay.scenario bootstrap` command trains and registers
+`demo-v1.0.0` under `/app/models`. It **deletes every registry row** and is only
+suitable for an explicitly disposable verification database and model volume.
+It is not part of ordinary service startup. The trusted demo artifact SHA-256 is
+`9358bedefcbdee3e4a79a8e828ab4ecca84f85511362f472f76e51eac6835b29`.
+The separate replay verifies its own configuration; it does not prove dashboard
+or scheduler readiness.
+
+Run focused regressions with Python 3.12 after installing the locked requirements:
+
+```bash
+python -m pytest tests/test_foundation.py tests/test_db_utils_retry.py -q
+```
+
+With a disposable four-service stack running and a registered model, run all
+regression and real-database tests in the worker image:
+
+```bash
+docker compose exec -T eval_worker python -m pytest tests/ -q
+```
+
+These tests do not replace real browser checks of timed refresh and database
+recovery. The demo still uses simulated labels. Performance metric version
+attribution, candidate-version handling for `demo-v1.0.0`, and user-facing
+retraining controls remain separate work.
 
 ## Usage
 
@@ -325,8 +383,9 @@ python tests/run_retry_tests.py
 # Start DB, then run (set DATABASE_URL to match .env)
 docker-compose up -d db
 export DATABASE_URL=postgresql://ml_user:YOUR_PASSWORD@localhost:5433/ml_monitor
-# Apply schema if needed: docker-compose exec db psql -U ml_user -d ml_monitor -f /docker-entrypoint-initdb.d/init.sql
-# and update_v2 for model_versions
+# Recover an existing or partially initialized database without deleting data:
+docker compose exec -T db sh -c 'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/init.sql
+docker compose exec -T db sh -c 'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/update_v2.sql
 pytest tests/ -v
 
 # Skip integration tests when DB is not available
