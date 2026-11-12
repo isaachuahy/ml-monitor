@@ -26,7 +26,7 @@ model_lock = threading.Lock() # To prevent race conditions when loading/switchin
 
 def load_active_model():
     """
-    Check DB for active model and loads if different from current model. 
+    Load the active database model when missing or when its version changes.
     """
     global current_model, current_version
     try:
@@ -38,8 +38,7 @@ def load_active_model():
 
         if row:
             new_version, filepath = row
-            # Only reload if version changed
-            if new_version != current_version:
+            if current_model is None or new_version != current_version:
                 logger.info(f"Loading new model version {new_version} from {filepath}")
                 try:
                     with open(filepath, "rb") as f:

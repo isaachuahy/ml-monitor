@@ -1,0 +1,17 @@
+services:
+  api:
+    build:
+      secrets:
+        - proxy_ca
+  eval_worker:
+    build:
+      secrets:
+        - proxy_ca
+  dashboard:
+    build:
+      secrets:
+        - proxy_ca
+
+secrets:
+  proxy_ca:
+    file: ${BUILD_CA_BUNDLE:?Set BUILD_CA_BUNDLE to a trusted CA bundle}

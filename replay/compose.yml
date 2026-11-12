@@ -1,8 +1,11 @@
 services:
   db:
+    image: postgres:15-alpine
+    build: !reset null
     container_name: !reset null
     ports: !reset []
     volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - ./db/update_v2.sql:/docker-entrypoint-initdb.d/model.sql:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "replay", "-d", "replay"]
