@@ -172,6 +172,7 @@ retraining controls remain separate work.
 ```bash
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: example-request-1" \
   -d '{
     "income": 75000,
     "debt": 15000,
@@ -188,6 +189,27 @@ Response:
   "model_version": "v1.0.2"
 }
 ```
+
+The API returns a successful prediction only after PostgreSQL confirms its commit.
+Supply an `Idempotency-Key` of 1–128 characters, starting with a letter or digit
+and containing only letters, digits, `.`, `_`, `:`, or `-`. Reusing a key with
+the same validated inputs returns the original result, including its model version.
+Different inputs return 409. A 503 means the commit outcome may be unknown;
+retry with the same key and inputs. The API returns the key in the response header.
+If you omit the key, the server generates one. Provide your own key before the
+request to recover if the entire HTTP response is lost. Concurrent requests can
+run inference more than once even though only one result is stored.
+
+The store allows 16 active operations and returns 503 when full. It allows up
+to three attempts within an eight-second cooperative budget, followed by up to
+one second for cleanup. Connection, statement, lock, and idle-transaction
+limits are two seconds, one second, 500 milliseconds, and two seconds respectively.
+DNS, synchronous inference, and event-loop stalls can exceed these limits; they
+are not a hard end-to-end deadline. Durable commits also require PostgreSQL to
+use durable storage and `fsync=on`; the store sets `synchronous_commit=on`.
+
+For an existing database, apply `db/init.sql` as shown in the setup instructions.
+It adds the nullable idempotency key and unique index without changing old rows.
 
 ### Model Retraining
 
