@@ -3,6 +3,7 @@ annotated-doc==0.0.6
 annotated-types==0.8.0
 anyio==4.16.0
 APScheduler==3.10.4
+asyncpg==0.32.0
 attrs==26.1.0
 blinker==1.9.0
 cachetools==7.3.0

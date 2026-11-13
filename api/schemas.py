@@ -4,8 +4,8 @@ from uuid import UUID
 
 class PredictionRequest(BaseModel):
     # Features for our Credit Risk model
-    income: float = Field(..., gt=0, description="Annual income of the applicant")
-    debt: float = Field(..., ge=0, description="Total current debt")
+    income: float = Field(..., gt=0, allow_inf_nan=False, description="Annual income of the applicant")
+    debt: float = Field(..., ge=0, allow_inf_nan=False, description="Total current debt")
     credit_score: int = Field(..., ge=300, le=850, description="FICO Credit Score")
 
 class PredictionResponse(BaseModel):

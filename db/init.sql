@@ -26,3 +26,6 @@ CREATE TABLE IF NOT EXISTS metrics (
     window_start TIMESTAMP NOT NULL,
     window_end TIMESTAMP NOT NULL
 );
+
+ALTER TABLE predictions ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(128);
+CREATE UNIQUE INDEX IF NOT EXISTS predictions_idempotency_key_idx ON predictions(idempotency_key);

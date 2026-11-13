@@ -1,16 +1,16 @@
 import os
 import time
 import uuid
-import json
+import re
 import logging
 import threading
 import pickle
 import pandas as pd
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from contextlib import asynccontextmanager
 import psycopg2
 from api.schemas import PredictionRequest, PredictionResponse
-from eval.db_utils import save_prediction_to_db
+from api.prediction_store import PredictionConflict, PredictionStore, PredictionUnavailable
 
 # Logging setup
 # Configure logging to show timestamp, name, level, and message
@@ -80,64 +80,53 @@ async def lifespan(app: FastAPI):
 # Context manager is lifespan which 
 app = FastAPI(title="ML Monitoring Inference Service", lifespan=lifespan)
 
-# DB writes (predictions) are in eval.db_utils.save_prediction_to_db with retry
+prediction_store = PredictionStore()
+
 
 @app.get("/health")
 def health_check():
     logger.info("Health check endpoint called")
     return {"status": "healthy"}
 
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest, background_tasks: BackgroundTasks):
-    logger.info(f"Received prediction request: {request.model_dump()}")
-    start_time = time.time()
-    request_id = str(uuid.uuid4())
-    
-    # Use loaded model if available, otherwise fallback to mock logic
+
+def infer_prediction(request: PredictionRequest):
+    """Run the captured active model or the explicitly labelled mock fallback."""
     with model_lock:
         model = current_model
         model_version = current_version
-    
+
     if model is not None:
-        # Use the loaded ML model for prediction
-        # Prepare input as DataFrame matching training format
         input_df = pd.DataFrame({
             "income": [request.income],
             "debt": [request.debt],
-            "credit_score": [request.credit_score]
+            "credit_score": [request.credit_score],
         })
-        
-        # Get prediction probability and class
-        prob = float(model.predict_proba(input_df)[0][1])  # Probability of class 1
-        pred_class = int(model.predict(input_df)[0])
+        probability = float(model.predict_proba(input_df)[0][1])
+        prediction_class = int(model.predict(input_df)[0])
     else:
-        # Fallback to mock logic if model not loaded yet
         logger.warning("Model not loaded, using mock prediction logic")
         normalized_score = (request.credit_score - 300) / 550
-        prob = 1.0 - (0.7 * normalized_score + 0.3 * min(request.income / 100000, 1))
-        prob = max(0, min(1, prob)) # Clip between 0 and 1
-        pred_class = 1 if prob > 0.5 else 0
+        probability = 1.0 - (0.7 * normalized_score + 0.3 * min(request.income / 100000, 1))
+        probability = max(0, min(1, probability))
+        prediction_class = 1 if probability > 0.5 else 0
         model_version = "mock"
+    return {"prediction_prob": probability, "prediction_class": prediction_class,
+            "model_version": model_version}
 
-    # Calculate latency in milliseconds for readability and standardisation
-    latency = (time.time() - start_time) * 1000
 
-    # Log for monitoring the prediction to the database
-    log_payload = {
-        "request_id": request_id,
-        "model_version": model_version,
-        "input_data": request.model_dump(), # Convert PredictionRequest to dict for logging
-        "prediction_prob": prob,
-        "prediction_class": pred_class,
-        "latency_ms": latency
-    }
-
-    # "Fire and forget" the DB write to avoid blocking the request
-    background_tasks.add_task(save_prediction_to_db, log_payload)
-
-    return PredictionResponse(
-        request_id=request_id,
-        prediction_prob=prob,
-        prediction_class=pred_class,
-        model_version=model_version
-    )
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(body: PredictionRequest, request: Request, response: Response):
+    """Return a committed prediction, replaying matching idempotency keys."""
+    keys = request.headers.getlist("idempotency-key")
+    if len(keys) > 1 or (keys and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", keys[0])):
+        raise HTTPException(status_code=422, detail="Invalid Idempotency-Key")
+    key = keys[0] if keys else "server:" + str(uuid.uuid4())
+    headers = {"Idempotency-Key": key}
+    try:
+        result = await prediction_store.get_or_create(key, body.model_dump(), lambda: infer_prediction(body))
+    except PredictionConflict:
+        raise HTTPException(status_code=409, detail="Idempotency key belongs to different inputs", headers=headers) from None
+    except PredictionUnavailable:
+        raise HTTPException(status_code=503, detail="Prediction unavailable; retry with the same idempotency key", headers=headers) from None
+    response.headers["Idempotency-Key"] = key
+    return result
